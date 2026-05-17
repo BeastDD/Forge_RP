@@ -4,6 +4,7 @@ use tokio::sync::Mutex;
 use std::process::Stdio;
 use std::path::PathBuf;
 use serde::Serialize;
+use serde_json::{json, Value};
 
 #[derive(Debug, Serialize, Clone)]
 pub struct ComfyStatus {
@@ -115,6 +116,146 @@ impl ComfyManager {
                 }
             }
             Err(_) => Ok(false),
+        }
+    }
+
+    /// Sprint 1: Queue a txt2img generation to ComfyUI
+    /// Builds a minimal dynamic workflow and sends it via /prompt API
+    pub async fn generate_image(
+        &self,
+        prompt: String,
+        negative_prompt: String,
+        checkpoint: String,
+        steps: u32,
+        cfg: f32,
+        seed: i64,
+    ) -> Result<Value, String> {
+        // Ensure engine is reachable
+        if !self.test_connection().await.unwrap_or(false) {
+            return Err("ComfyUI engine is not running. Click IGNITE THE FORGE first, Boss.".to_string());
+        }
+
+        let port = self.port;
+
+        // Build a clean, minimal txt2img workflow (SD1.5 / SDXL compatible)
+        // This is the foundation — later sprints will load from workflows/ JSON templates + custom nodes
+        let workflow = json!({
+            "1": {
+                "inputs": {
+                    "ckpt_name": checkpoint
+                },
+                "class_type": "CheckpointLoaderSimple",
+                "_meta": {
+                    "title": "Load Checkpoint"
+                }
+            },
+            "2": {
+                "inputs": {
+                    "text": prompt,
+                    "clip": ["1", 1]
+                },
+                "class_type": "CLIPTextEncode",
+                "_meta": {
+                    "title": "Positive Prompt"
+                }
+            },
+            "3": {
+                "inputs": {
+                    "text": negative_prompt,
+                    "clip": ["1", 1]
+                },
+                "class_type": "CLIPTextEncode",
+                "_meta": {
+                    "title": "Negative Prompt"
+                }
+            },
+            "4": {
+                "inputs": {
+                    "width": 512,
+                    "height": 768,
+                    "batch_size": 1
+                },
+                "class_type": "EmptyLatentImage",
+                "_meta": {
+                    "title": "Empty Latent Image"
+                }
+            },
+            "5": {
+                "inputs": {
+                    "seed": seed,
+                    "steps": steps,
+                    "cfg": cfg,
+                    "sampler_name": "euler",
+                    "scheduler": "normal",
+                    "denoise": 1.0,
+                    "model": ["1", 0],
+                    "positive": ["2", 0],
+                    "negative": ["3", 0],
+                    "latent_image": ["4", 0]
+                },
+                "class_type": "KSampler",
+                "_meta": {
+                    "title": "KSampler"
+                }
+            },
+            "6": {
+                "inputs": {
+                    "samples": ["5", 0],
+                    "vae": ["1", 2]
+                },
+                "class_type": "VAEDecode",
+                "_meta": {
+                    "title": "VAE Decode"
+                }
+            },
+            "7": {
+                "inputs": {
+                    "filename_prefix": "mandingoforge_output",
+                    "images": ["6", 0]
+                },
+                "class_type": "SaveImage",
+                "_meta": {
+                    "title": "Save Image to Output"
+                }
+            }
+        });
+
+        let client = reqwest::Client::new();
+        let payload = json!({ "prompt": workflow });
+        let url = format!("http://127.0.0.1:{}/prompt", port);
+
+        let response = client
+            .post(&url)
+            .json(&payload)
+            .send()
+            .await
+            .map_err(|e| format!("Network error sending to ComfyUI: {}", e))?;
+
+        if response.status().is_success() {
+            let result: Value = response
+                .json()
+                .await
+                .map_err(|e| format!("Failed to parse ComfyUI response: {}", e))?;
+            Ok(result)
+        } else {
+            let status = response.status();
+            let text = response.text().await.unwrap_or_else(|_| "Unknown error".to_string());
+            Err(format!("ComfyUI rejected the prompt ({}): {}", status, text))
+        }
+    }
+
+    /// Simple queue status check (for future progress polling)
+    pub async fn get_queue(&self) -> Result<Value, String> {
+        let url = format!("http://127.0.0.1:{}/queue", self.port);
+        match reqwest::get(&url).await {
+            Ok(resp) => {
+                if resp.status().is_success() {
+                    resp.json::<Value>().await.map_err(|e| e.to_string())
+                } else {
+                    Err(format!("Queue check failed: {}", resp.status()))
+                }
+            }
+            Err(e) => Err(e.to_string()),
         }
     }
 }
