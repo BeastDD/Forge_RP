@@ -28,7 +28,6 @@ async fn test_comfy_connection(manager: State<'_, Arc<ComfyManager>>) -> Result<
     manager.test_connection().await
 }
 
-// Sprint 1: Core image generation command
 #[tauri::command]
 async fn generate_image(
     manager: State<'_, Arc<ComfyManager>>,
@@ -42,10 +41,21 @@ async fn generate_image(
     manager.generate_image(prompt, negative_prompt, checkpoint, steps, cfg, seed).await
 }
 
-// Bonus for polling
 #[tauri::command]
 async fn get_comfy_queue(manager: State<'_, Arc<ComfyManager>>) -> Result<Value, String> {
     manager.get_queue().await
+}
+
+// === NEW: ComfyUI Path Management (Sprint 1) ===
+#[tauri::command]
+async fn get_comfyui_path(manager: State<'_, Arc<ComfyManager>>) -> Result<String, String> {
+    let path = manager.get_comfy_path().await;
+    Ok(path.to_string_lossy().to_string())
+}
+
+#[tauri::command]
+async fn set_comfyui_path(manager: State<'_, Arc<ComfyManager>>, path: String) -> Result<String, String> {
+    manager.set_comfy_path(path).await
 }
 
 #[tokio::main]
@@ -55,10 +65,9 @@ async fn main() {
             let comfy_manager = Arc::new(ComfyManager::new());
             app.manage(comfy_manager.clone());
 
-            // Create main window using new Tauri v2 API
             let _window = tauri::WebviewWindowBuilder::new(
                 app,
-                "mandingoforge-main",      // ← New unique label
+                "mandingoforge-main",
                 tauri::WebviewUrl::App("index.html".into()),
             )
             .title("MANDINGOFORGE v1.0")
@@ -76,8 +85,10 @@ async fn main() {
             stop_comfyui,
             get_comfy_status,
             test_comfy_connection,
-            generate_image,      // Sprint 1
-            get_comfy_queue      // Sprint 1
+            generate_image,
+            get_comfy_queue,
+            get_comfyui_path,   // NEW
+            set_comfyui_path    // NEW
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
