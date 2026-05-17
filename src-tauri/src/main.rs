@@ -26,7 +26,7 @@ async fn generate_image(
     steps: u32,
     cfg: f32,
     seed: i64,
-    model_type: String
+    model_type: String,
 ) -> Result<Value, String> {
     manager.generate_image(prompt, negative_prompt, checkpoint, steps, cfg, seed, model_type).await
 }
@@ -58,6 +58,7 @@ async fn main() {
         .setup(|app| {
             let comfy_manager = Arc::new(ComfyManager::new());
             app.manage(comfy_manager);
+            // Do NOT manually create window here — it is defined in tauri.conf.json
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
