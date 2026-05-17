@@ -27,6 +27,11 @@ function App() {
 
   // Generation state
   const [prompt, setPrompt] = useState('');
+  const [checkpoints, setCheckpoints] = useState<string[]>([]);
+  const [selectedCheckpoint, setSelectedCheckpoint] = useState('');
+  const [steps, setSteps] = useState(20);
+  const [cfg, setCfg] = useState(7.5);
+  const [seed, setSeed] = useState(-1);
   const [generating, setGenerating] = useState(false);
 
   useEffect(() => {
@@ -45,8 +50,23 @@ function App() {
 
   async function loadPaths() {
     try {
-      setComfyPath(await invoke<string>('get_comfyui_path'));
-      setPythonPath(await invoke<string>('get_python_path'));
+      const c = await invoke<string>('get_comfyui_path');
+      const p = await invoke<string>('get_python_path');
+      setComfyPath(c);
+      setPythonPath(p);
+
+      // Load checkpoints when comfy path is available
+      if (c) {
+        try {
+          const models = await invoke<string[]>('list_checkpoints');
+          setCheckpoints(models);
+          if (models.length > 0 && !selectedCheckpoint) {
+            setSelectedCheckpoint(models[0]);
+          }
+        } catch (e) {
+          console.error('Failed to load checkpoints', e);
+        }
+      }
     } catch (e) {}
   }
 
@@ -58,11 +78,8 @@ function App() {
       setMessage(result);
       await fetchStatus();
 
-      // If start was successful, switch to generation view
       if (!result.toLowerCase().includes('error')) {
-        setTimeout(() => {
-          setCurrentView('generation');
-        }, 800);
+        setTimeout(() => setCurrentView('generation'), 600);
       }
     } catch (err: any) {
       setMessage(`Error: ${err}`);
@@ -73,8 +90,7 @@ function App() {
   async function handleStop() {
     setLoading(true);
     try {
-      const result = await invoke<string>('stop_comfyui');
-      setMessage(result);
+      await invoke('stop_comfyui');
       setCurrentView('dashboard');
       await fetchStatus();
     } catch (err: any) {
@@ -83,31 +99,75 @@ function App() {
     setLoading(false);
   }
 
-  // Generation (placeholder for now)
   async function handleGenerate() {
-    if (!prompt.trim()) return;
+    if (!prompt.trim() || !selectedCheckpoint) {
+      setMessage('Please enter a prompt and select a checkpoint');
+      return;
+    }
+
     setGenerating(true);
+    setMessage('');
+
     try {
       const result = await invoke('generate_image', {
         prompt: prompt,
-        negative_prompt: 'low quality, bad anatomy',
-        checkpoint: 'model.safetensors', // TODO: make dynamic later
-        steps: 25,
-        cfg: 7,
-        seed: -1
+        negative_prompt: 'low quality, bad anatomy, deformed',
+        checkpoint: selectedCheckpoint,
+        steps: steps,
+        cfg: cfg,
+        seed: seed
       });
-      setMessage('Generation started! Check ComfyUI output folder.');
+      setMessage('Generation started! Image will be saved in ComfyUI output folder.');
     } catch (err: any) {
       setMessage(`Generation error: ${err}`);
     }
+
     setGenerating(false);
   }
 
-  // Settings functions (keep existing)
-  async function pickComfyUIPath() { /* ... */ }
-  async function pickPythonPath() { /* ... */ }
-  async function createVirtualEnvironment() { /* ... */ }
-  async function installRequirements() { /* ... */ }
+  // Settings functions
+  async function pickComfyUIPath() {
+    const selected = await open({ directory: true });
+    if (selected) {
+      try {
+        await invoke('set_comfyui_path', { path: selected });
+        await loadPaths();
+        setPathError('');
+      } catch (e: any) { setPathError(String(e)); }
+    }
+  }
+
+  async function pickPythonPath() {
+    const selected = await open({ directory: false });
+    if (selected) {
+      try {
+        await invoke('set_python_path', { path: selected });
+        await loadPaths();
+      } catch (e: any) { setPathError(String(e)); }
+    }
+  }
+
+  async function createVirtualEnvironment() {
+    setVenvCreating(true);
+    const target = await open({ directory: true });
+    if (target) {
+      try {
+        const result = await invoke<string>('create_comfyui_venv', { targetDir: target });
+        setMessage(result);
+        await loadPaths();
+      } catch (e: any) { setPathError(String(e)); }
+    }
+    setVenvCreating(false);
+  }
+
+  async function installRequirements() {
+    setInstalling(true);
+    try {
+      const result = await invoke<string>('install_comfyui_requirements');
+      setMessage(result);
+    } catch (e: any) { setPathError(String(e)); }
+    setInstalling(false);
+  }
 
   return (
     <div className="min-h-screen bg-mandingo-bg text-mandingo-text">
@@ -122,9 +182,7 @@ function App() {
           </div>
           <div className="flex items-center gap-3">
             {currentView === 'generation' && (
-              <button onClick={() => setCurrentView('dashboard')} className="px-4 py-2 border border-mandingo-gold/30 rounded-xl text-sm">
-                Back to Dashboard
-              </button>
+              <button onClick={() => setCurrentView('dashboard')} className="px-4 py-2 border border-mandingo-gold/30 rounded-xl text-sm">Back</button>
             )}
             <button onClick={() => setShowSettings(true)} className="flex items-center gap-2 px-4 py-2 border border-mandingo-gold/30 rounded-xl">
               <Settings className="w-4 h-4" /> SETTINGS
@@ -133,7 +191,7 @@ function App() {
         </div>
       </nav>
 
-      {/* DASHBOARD VIEW */}
+      {/* DASHBOARD */}
       {currentView === 'dashboard' && (
         <div className="max-w-5xl mx-auto px-8 pt-12">
           <div className="text-center mb-12">
@@ -167,76 +225,90 @@ function App() {
 
       {/* GENERATION VIEW */}
       {currentView === 'generation' && (
-        <div className="max-w-4xl mx-auto px-8 pt-10">
+        <div className="max-w-4xl mx-auto px-8 pt-8">
           <div className="flex items-center gap-3 mb-8">
             <ImageIcon className="w-8 h-8 text-mandingo-gold" />
             <div>
               <div className="text-3xl font-semibold">Image Generation</div>
-              <div className="text-mandingo-muted text-sm">ComfyUI is running • Ready to forge</div>
+              <div className="text-mandingo-muted">ComfyUI is running</div>
             </div>
           </div>
 
-          <div className="card">
-            <div className="mb-4">
+          <div className="card space-y-6">
+            {/* Prompt */}
+            <div>
               <div className="text-sm text-mandingo-muted mb-2">PROMPT</div>
               <textarea
                 value={prompt}
                 onChange={(e) => setPrompt(e.target.value)}
-                placeholder="A muscular black man with intense gaze, cinematic lighting, highly detailed..."
-                className="w-full h-32 bg-mandingo-surface2 border border-mandingo-gold/20 rounded-2xl p-4 text-lg resize-y"
+                placeholder="Describe what you want to generate..."
+                className="w-full h-28 bg-mandingo-surface2 border border-mandingo-gold/20 rounded-2xl p-4"
               />
+            </div>
+
+            {/* Checkpoint */}
+            <div>
+              <div className="text-sm text-mandingo-muted mb-2">CHECKPOINT</div>
+              <select
+                value={selectedCheckpoint}
+                onChange={(e) => setSelectedCheckpoint(e.target.value)}
+                className="w-full bg-mandingo-surface2 border border-mandingo-gold/20 rounded-2xl p-3"
+              >
+                {checkpoints.length === 0 && <option>No models found</option>}
+                {checkpoints.map((model) => (
+                  <option key={model} value={model}>{model}</option>
+                ))}
+              </select>
+            </div>
+
+            {/* Parameters */}
+            <div className="grid grid-cols-3 gap-4">
+              <div>
+                <div className="text-sm text-mandingo-muted mb-1">STEPS</div>
+                <input
+                  type="number"
+                  value={steps}
+                  onChange={(e) => setSteps(Math.max(1, Math.min(100, parseInt(e.target.value) || 20)))}
+                  className="w-full bg-mandingo-surface2 border border-mandingo-gold/20 rounded-xl p-3"
+                />
+              </div>
+              <div>
+                <div className="text-sm text-mandingo-muted mb-1">CFG SCALE</div>
+                <input
+                  type="number"
+                  step="0.5"
+                  value={cfg}
+                  onChange={(e) => setCfg(Math.max(0, Math.min(30, parseFloat(e.target.value) || 7.5)))}
+                  className="w-full bg-mandingo-surface2 border border-mandingo-gold/20 rounded-xl p-3"
+                />
+              </div>
+              <div>
+                <div className="text-sm text-mandingo-muted mb-1">SEED (-1 = random)</div>
+                <input
+                  type="number"
+                  value={seed}
+                  onChange={(e) => setSeed(parseInt(e.target.value) || -1)}
+                  className="w-full bg-mandingo-surface2 border border-mandingo-gold/20 rounded-xl p-3"
+                />
+              </div>
             </div>
 
             <button
               onClick={handleGenerate}
-              disabled={generating || !prompt.trim()}
+              disabled={generating || !prompt.trim() || !selectedCheckpoint}
               className="w-full py-4 bg-mandingo-gold text-mandingo-bg rounded-2xl font-semibold text-lg disabled:opacity-60"
             >
               {generating ? 'GENERATING...' : 'GENERATE IMAGE'}
             </button>
 
-            {message && <div className="mt-4 p-4 bg-mandingo-surface2 rounded-xl text-sm">{message}</div>}
+            {message && <div className="p-4 bg-mandingo-surface2 rounded-xl text-sm">{message}</div>}
           </div>
         </div>
       )}
 
       {/* SETTINGS MODAL */}
       <AnimatePresence>
-        {showSettings && (
-          <div className="fixed inset-0 bg-black/80 flex items-center justify-center z-[100] p-6">
-            <div className="bg-mandingo-surface rounded-3xl w-full max-w-lg p-8">
-              <div className="flex justify-between mb-6">
-                <div className="text-2xl">Settings</div>
-                <button onClick={() => setShowSettings(false)}>×</button>
-              </div>
-
-              <div className="mb-6">
-                <div className="text-mandingo-gold mb-2">ComfyUI Folder</div>
-                <div className="bg-mandingo-surface2 p-3 rounded mb-2 text-sm font-mono">{comfyPath}</div>
-                <button onClick={pickComfyUIPath} className="w-full py-2 border rounded">Browse ComfyUI</button>
-              </div>
-
-              <div className="mb-6">
-                <div className="text-mandingo-gold mb-2">Python Environment</div>
-                <div className="bg-mandingo-surface2 p-3 rounded mb-3 text-sm font-mono">{pythonPath}</div>
-
-                <div className="grid grid-cols-2 gap-3 mb-3">
-                  <button onClick={pickPythonPath} className="py-2 border rounded">Browse Python</button>
-                  <button onClick={createVirtualEnvironment} disabled={venvCreating} className="py-2 bg-mandingo-gold text-black rounded font-medium">
-                    {venvCreating ? 'Creating...' : 'Create New Venv'}
-                  </button>
-                </div>
-
-                <button onClick={installRequirements} disabled={installing} className="w-full py-3 border rounded flex items-center justify-center gap-2">
-                  <Download className="w-4 h-4" /> {installing ? 'Installing...' : 'Install Requirements'}
-                </button>
-              </div>
-
-              {pathError && <div className="text-red-400 text-sm mb-4">{pathError}</div>}
-              <button onClick={() => setShowSettings(false)} className="w-full py-3 bg-mandingo-gold text-black rounded-xl">Done</button>
-            </div>
-          </div>
-        )}
+        {showSettings && ( /* existing settings modal ... */ )}
       </AnimatePresence>
     </div>
   );
