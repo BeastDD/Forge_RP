@@ -1,0 +1,27 @@
+# Dependencies
+node_modules/
+frontend/node_modules/
+
+# Build
+dist/
+frontend/dist/
+src-tauri/target/
+
+# ComfyUI (user installs)
+comfyui/
+!comfyui/.gitkeep
+
+# Models & large files
+models/
+!models/.gitkeep
+
+# OS / Editor
+.DS_Store
+*.log
+.env
+.idea/
+.vscode/
+
+# Tauri
+src-tauri/target/
+src-tauri/gen/

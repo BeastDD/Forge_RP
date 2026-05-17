@@ -1,0 +1,73 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --mandingo-bg: #0a0a0a;
+  --mandingo-surface: #111111;
+  --mandingo-gold: #c5a46e;
+  --mandingo-crimson: #8b0000;
+}
+
+body {
+  font-family: 'Inter', system_ui, sans-serif;
+}
+
+/* Luxurious Mandingo Aesthetic */
+.glass {
+  background: rgba(17, 17, 17, 0.85);
+  backdrop-filter: blur(20px);
+  border: 1px solid rgba(197, 164, 110, 0.15);
+}
+
+.gold-border {
+  border-color: #c5a46e;
+}
+
+.gold-text {
+  color: #c5a46e;
+}
+
+.crimson-accent {
+  color: #8b0000;
+}
+
+.status-dot {
+  animation: pulse 2s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+}
+
+@keyframes pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.4; }
+}
+
+/* Premium button styles */
+.btn-primary {
+  @apply px-8 py-4 rounded-xl font-semibold text-lg transition-all duration-200;
+  background: linear-gradient(145deg, #c5a46e, #d4af37);
+  color: #0a0a0a;
+  box-shadow: 0 4px 15px rgba(197, 164, 110, 0.3);
+}
+
+.btn-primary:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 8px 25px rgba(197, 164, 110, 0.4);
+}
+
+.btn-danger {
+  @apply px-6 py-3 rounded-xl font-medium transition-all duration-200;
+  background: #8b0000;
+  color: white;
+}
+
+.btn-danger:hover {
+  background: #a00000;
+}
+
+.card {
+  @apply glass rounded-2xl p-6;
+}
+
+.section-title {
+  @apply text-3xl font-semibold tracking-tight gold-text mb-2;
+}
