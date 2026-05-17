@@ -34,23 +34,31 @@ function App() {
     try {
       const res = await invoke<ComfyStatus>('get_comfy_status');
       setStatus(res);
-    } catch (e) { console.error(e); }
+    } catch (e) {
+      console.error('Status error:', e);
+    }
   }
 
   async function loadPaths() {
     try {
-      setComfyPath(await invoke<string>('get_comfyui_path'));
-      setPythonPath(await invoke<string>('get_python_path'));
+      const c = await invoke<string>('get_comfyui_path');
+      const p = await invoke<string>('get_python_path');
+      setComfyPath(c);
+      setPythonPath(p);
     } catch (e) {}
   }
 
   async function handleStart() {
     setLoading(true);
+    setMessage('');
     try {
       const result = await invoke<string>('start_comfyui');
       setMessage(result);
       await fetchStatus();
-    } catch (err: any) { setMessage(String(err)); }
+    } catch (err: any) {
+      setMessage(`Error: ${err}`);
+      console.error('Start error:', err);
+    }
     setLoading(false);
   }
 
@@ -60,7 +68,9 @@ function App() {
       const result = await invoke<string>('stop_comfyui');
       setMessage(result);
       await fetchStatus();
-    } catch (err: any) { setMessage(String(err)); }
+    } catch (err: any) {
+      setMessage(`Error: ${err}`);
+    }
     setLoading(false);
   }
 
@@ -68,20 +78,30 @@ function App() {
     try {
       const connected = await invoke<boolean>('test_comfy_connection');
       setConnectionTest(connected);
-    } catch { setConnectionTest(false); }
+    } catch {
+      setConnectionTest(false);
+    }
   }
 
   const openComfyUI = () => {
-    if (status.running) window.open(`http://127.0.0.1:${status.port}`, '_blank');
+    if (status.running) {
+      window.open(`http://127.0.0.1:${status.port}`, '_blank');
+    } else {
+      setMessage('ComfyUI is not running yet.');
+    }
   };
 
+  // Settings
   async function pickComfyUIPath() {
     const selected = await open({ directory: true });
     if (selected) {
       try {
         await invoke('set_comfyui_path', { path: selected });
         await loadPaths();
-      } catch (e: any) { setPathError(String(e)); }
+        setPathError('');
+      } catch (e: any) {
+        setPathError(String(e));
+      }
     }
   }
 
@@ -91,19 +111,23 @@ function App() {
       try {
         await invoke('set_python_path', { path: selected });
         await loadPaths();
-      } catch (e: any) { setPathError(String(e)); }
+      } catch (e: any) {
+        setPathError(String(e));
+      }
     }
   }
 
   async function createVirtualEnvironment() {
     setVenvCreating(true);
-    const target = await open({ directory: true, title: 'Choose folder for new venv' });
+    const target = await open({ directory: true, title: 'Choose folder for new virtual environment' });
     if (target) {
       try {
         const result = await invoke<string>('create_comfyui_venv', { targetDir: target });
         setMessage(result);
         await loadPaths();
-      } catch (e: any) { setPathError(String(e)); }
+      } catch (e: any) {
+        setPathError(String(e));
+      }
     }
     setVenvCreating(false);
   }
@@ -113,7 +137,9 @@ function App() {
     try {
       const result = await invoke<string>('install_comfyui_requirements');
       setMessage(result);
-    } catch (e: any) { setPathError(String(e)); }
+    } catch (e: any) {
+      setPathError(String(e));
+    }
     setInstalling(false);
   }
 
@@ -122,7 +148,9 @@ function App() {
       <nav className="border-b border-mandingo-gold/20 bg-mandingo-surface/95 sticky top-0 z-50">
         <div className="max-w-7xl mx-auto px-8 py-5 flex justify-between items-center">
           <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-mandingo-gold flex items-center justify-center"><Crown className="w-6 h-6" /></div>
+            <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-mandingo-gold flex items-center justify-center">
+              <Crown className="w-6 h-6" />
+            </div>
             <div>
               <div className="font-semibold text-2xl tracking-tight gold-text">MANDINGOFORGE</div>
               <div className="text-xs text-mandingo-muted">v1.0 • SPRINT 1</div>
@@ -139,29 +167,36 @@ function App() {
           <h1 className="text-6xl font-semibold tracking-tighter">Forge. Desire. Create.</h1>
         </div>
 
+        {/* Main Control Card */}
         <div className="card max-w-3xl mx-auto mb-8">
           <div className="flex justify-between mb-6">
-            <div>
-              <div className="section-title">ComfyUI Engine</div>
-            </div>
-            <div className={`px-4 py-1 rounded-full text-sm ${status.running ? 'text-green-400 border border-green-500/40' : 'text-mandingo-muted border border-mandingo-gold/30'}`}>
+            <div className="section-title">ComfyUI Engine</div>
+            <div className={`px-4 py-1 rounded-full text-sm ${status.running ? 'text-green-400' : 'text-mandingo-muted'}`}>
               {status.running ? 'IGNITED' : 'DORMANT'}
             </div>
           </div>
 
           <div className="flex gap-4 mb-6">
             {!status.running ? (
-              <button onClick={handleStart} className="btn-primary flex-1">IGNITE THE FORGE</button>
+              <button onClick={handleStart} disabled={loading} className="btn-primary flex-1">
+                {loading ? 'IGNITING...' : 'IGNITE THE FORGE'}
+              </button>
             ) : (
-              <button onClick={handleStop} className="btn-danger flex-1">SHUT DOWN ENGINE</button>
+              <button onClick={handleStop} disabled={loading} className="btn-danger flex-1">
+                {loading ? 'SHUTTING DOWN...' : 'SHUT DOWN ENGINE'}
+              </button>
             )}
-            <button onClick={openComfyUI} className="px-6 py-4 border border-mandingo-gold/30 rounded-xl">Open ComfyUI</button>
+            <button onClick={openComfyUI} className="px-6 py-4 border border-mandingo-gold/30 rounded-xl">
+              Open ComfyUI
+            </button>
           </div>
 
-          {message && <div className="p-4 bg-mandingo-surface2 rounded-xl text-sm">{message}</div>}
+          {message && (
+            <div className="p-4 bg-mandingo-surface2 rounded-xl text-sm mb-4">
+              {message}
+            </div>
+          )}
         </div>
-
-        <div className="text-center text-sm text-mandingo-muted">Settings now includes Create Venv + Install Requirements</div>
       </div>
 
       {/* SETTINGS MODAL */}
