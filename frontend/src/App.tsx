@@ -1,9 +1,26 @@
-  // Generation state
-  const [prompt, setPrompt] = useState('');
-  const [checkpoints, setCheckpoints] = useState<string[]>([]);
-  const [selectedCheckpoint, setSelectedCheckpoint] = useState('');
-  const [modelType, setModelType] = useState<'sd15' | 'sdxl'>('sdxl'); // default to SDXL
-  const [steps, setSteps] = useState(20);
-  const [cfg, setCfg] = useState(7.5);
-  const [seed, setSeed] = useState(-1);
-  const [generating, setGenerating] = useState(false);
+  async function handleGenerate() {
+    if (!prompt.trim() || !selectedCheckpoint) {
+      setMessage('Please enter a prompt and select a checkpoint');
+      return;
+    }
+
+    setGenerating(true);
+    setMessage('');
+
+    try {
+      const result = await invoke('generate_image', {
+        prompt: prompt,
+        negative_prompt: 'low quality, bad anatomy, deformed',  // Fixed parameter name
+        checkpoint: selectedCheckpoint,
+        steps: steps,
+        cfg: cfg,
+        seed: seed,
+        model_type: modelType
+      });
+      setMessage('Generation started! Check the output folder.');
+    } catch (err: any) {
+      setMessage(`Generation error: ${err}`);
+    }
+
+    setGenerating(false);
+  }
