@@ -10,12 +10,12 @@
     try {
       await invoke("generate_image", {
         prompt: prompt,
-        negativePrompt: "low quality, bad anatomy, deformed", // camelCase for Tauri v2
+        negative_prompt: "low quality, bad anatomy, deformed",
         checkpoint: selectedCheckpoint,
         steps: steps,
         cfg: cfg,
         seed: seed,
-        modelType: modelType, // camelCase for Tauri v2
+        model_type: modelType,
       });
 
       setMessage("Generation started! Check the output folder.");
