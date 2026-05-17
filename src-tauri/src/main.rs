@@ -46,15 +46,31 @@ async fn get_comfy_queue(manager: State<'_, Arc<ComfyManager>>) -> Result<Value,
     manager.get_queue().await
 }
 
+// ComfyUI Path
 #[tauri::command]
 async fn get_comfyui_path(manager: State<'_, Arc<ComfyManager>>) -> Result<String, String> {
-    let path = manager.get_comfy_path().await;
-    Ok(path.to_string_lossy().to_string())
+    Ok(manager.get_comfy_path().await.to_string_lossy().to_string())
 }
 
 #[tauri::command]
 async fn set_comfyui_path(manager: State<'_, Arc<ComfyManager>>, path: String) -> Result<String, String> {
     manager.set_comfy_path(path).await
+}
+
+// Python Environment (NEW)
+#[tauri::command]
+async fn get_python_path(manager: State<'_, Arc<ComfyManager>>) -> Result<String, String> {
+    Ok(manager.get_python_path().await.to_string_lossy().to_string())
+}
+
+#[tauri::command]
+async fn set_python_path(manager: State<'_, Arc<ComfyManager>>, path: String) -> Result<String, String> {
+    manager.set_python_path(path).await
+}
+
+#[tauri::command]
+async fn create_comfyui_venv(manager: State<'_, Arc<ComfyManager>>, target_dir: String) -> Result<String, String> {
+    manager.create_virtual_environment(target_dir).await
 }
 
 #[tokio::main]
@@ -81,14 +97,10 @@ async fn main() {
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
-            start_comfyui,
-            stop_comfyui,
-            get_comfy_status,
-            test_comfy_connection,
-            generate_image,
-            get_comfy_queue,
-            get_comfyui_path,
-            set_comfyui_path
+            start_comfyui, stop_comfyui, get_comfy_status, test_comfy_connection,
+            generate_image, get_comfy_queue,
+            get_comfyui_path, set_comfyui_path,
+            get_python_path, set_python_path, create_comfyui_venv   // NEW
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
