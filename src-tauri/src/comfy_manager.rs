@@ -43,7 +43,6 @@ impl ComfyManager {
     }
 
     pub async fn get_comfy_path(&self) -> PathBuf { self.comfy_path.lock().await.clone() }
-
     pub async fn set_comfy_path(&self, new_path: String) -> Result<String, String> {
         let path = PathBuf::from(new_path.trim());
         if !path.join("main.py").exists() { return Err(format!("Invalid ComfyUI path: {}", path.display())); }
@@ -53,7 +52,6 @@ impl ComfyManager {
     }
 
     pub async fn get_python_path(&self) -> PathBuf { self.python_path.lock().await.clone() }
-
     pub async fn set_python_path(&self, new_path: String) -> Result<String, String> {
         let path = PathBuf::from(new_path.trim());
         if !path.exists() { return Err(format!("Python not found: {}", path.display())); }
@@ -62,56 +60,106 @@ impl ComfyManager {
         Ok(format!("Python set to: {}", path.display()))
     }
 
-    pub async fn create_virtual_environment(&self, target_dir: String) -> Result<String, String> {
-        let target = PathBuf::from(target_dir.trim());
-        if target.exists() { return Err("Target folder already exists.".to_string()); }
-
-        let sys_python = if cfg!(windows) { "python" } else { "python3" };
-        let output = Command::new(sys_python).arg("-m").arg("venv").arg(&target).output().await
-            .map_err(|e| format!("Failed to create venv: {}", e))?;
-
-        if !output.status.success() {
-            return Err(format!("venv creation failed: {}", String::from_utf8_lossy(&output.stderr)));
-        }
-
-        let venv_python = if cfg!(windows) {
-            target.join("Scripts").join("python.exe")
-        } else {
-            target.join("bin").join("python")
-        };
-
-        *self.python_path.lock().await = venv_python.clone();
-        let _ = fs::write(".python_path", venv_python.to_string_lossy().as_ref());
-
-        Ok(format!("Virtual environment created successfully.\nSwitched to: {}", venv_python.display()))
-    }
-
-    pub async fn install_requirements(&self) -> Result<String, String> {
+    // List checkpoints by auto-detecting from ComfyUI path
+    pub async fn list_checkpoints(&self) -> Result<Vec<String>, String> {
         let comfy_path = self.get_comfy_path().await;
-        let python_path = self.get_python_path().await;
+        let checkpoints_dir = comfy_path.join("models").join("checkpoints");
 
-        let req_file = comfy_path.join("requirements.txt");
-        if !req_file.exists() {
-            return Err("requirements.txt not found in ComfyUI folder".to_string());
+        if !checkpoints_dir.exists() {
+            return Err(format!("Checkpoints folder not found at: {}", checkpoints_dir.display()));
         }
 
-        let py = if python_path.exists() { python_path.to_string_lossy().to_string() } else { "python".to_string() };
+        let mut models = Vec::new();
+        if let Ok(entries) = fs::read_dir(&checkpoints_dir) {
+            for entry in entries.flatten() {
+                let path = entry.path();
+                if path.is_file() {
+                    if let Some(ext) = path.extension() {
+                        if ext == "safetensors" || ext == "ckpt" || ext == "pt" {
+                            if let Some(name) = path.file_name() {
+                                models.push(name.to_string_lossy().to_string());
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        models.sort();
+        Ok(models)
+    }
 
-        let output = Command::new(&py)
-            .arg("-m").arg("pip").arg("install").arg("-r").arg(&req_file)
-            .current_dir(&comfy_path)
-            .output()
-            .await
-            .map_err(|e| format!("pip install failed: {}", e))?;
+    pub async fn generate_image(
+        &self,
+        prompt: String,
+        negative_prompt: String,
+        checkpoint: String,
+        steps: u32,
+        cfg: f32,
+        seed: i64,
+    ) -> Result<Value, String> {
+        if !self.test_connection().await.unwrap_or(false) {
+            return Err("ComfyUI is not running".to_string());
+        }
 
-        if output.status.success() {
-            Ok("Requirements installed successfully!".to_string())
+        let port = self.port;
+
+        let workflow = json!({
+            "1": {
+                "inputs": { "ckpt_name": checkpoint },
+                "class_type": "CheckpointLoaderSimple"
+            },
+            "2": {
+                "inputs": { "text": prompt, "clip": ["1", 1] },
+                "class_type": "CLIPTextEncode"
+            },
+            "3": {
+                "inputs": { "text": negative_prompt, "clip": ["1", 1] },
+                "class_type": "CLIPTextEncode"
+            },
+            "4": {
+                "inputs": { "width": 512, "height": 768, "batch_size": 1 },
+                "class_type": "EmptyLatentImage"
+            },
+            "5": {
+                "inputs": {
+                    "seed": seed,
+                    "steps": steps,
+                    "cfg": cfg,
+                    "sampler_name": "euler",
+                    "scheduler": "normal",
+                    "denoise": 1.0,
+                    "model": ["1", 0],
+                    "positive": ["2", 0],
+                    "negative": ["3", 0],
+                    "latent_image": ["4", 0]
+                },
+                "class_type": "KSampler"
+            },
+            "6": {
+                "inputs": { "samples": ["5", 0], "vae": ["1", 2] },
+                "class_type": "VAEDecode"
+            },
+            "7": {
+                "inputs": { "filename_prefix": "mandingoforge", "images": ["6", 0] },
+                "class_type": "SaveImage"
+            }
+        });
+
+        let client = reqwest::Client::new();
+        let payload = json!({ "prompt": workflow });
+        let url = format!("http://127.0.0.1:{}/prompt", port);
+
+        let response = client.post(&url).json(&payload).send().await
+            .map_err(|e| format!("Failed to send to ComfyUI: {}", e))?;
+
+        if response.status().is_success() {
+            response.json::<Value>().await.map_err(|e| e.to_string())
         } else {
-            Err(format!("pip install error:\n{}", String::from_utf8_lossy(&output.stderr)))
+            Err(format!("ComfyUI error: {}", response.status()))
         }
     }
 
-    pub async fn start(&self) -> Result<String, String> {
+    pub async fn start(&self) -> Result<String, String> { /* ... existing start code ... */ 
         let mut child_guard = self.child.lock().await;
         if child_guard.is_some() { return Ok("ComfyUI already running".to_string()); }
 
@@ -137,7 +185,7 @@ impl ComfyManager {
         }
     }
 
-    pub async fn stop(&self) -> Result<String, String> {
+    pub async fn stop(&self) -> Result<String, String> { /* existing */ 
         let mut child_guard = self.child.lock().await;
         if let Some(mut child) = child_guard.take() {
             let _ = child.kill().await;
@@ -154,23 +202,6 @@ impl ComfyManager {
             Ok(r) => Ok(r.status().is_success()),
             Err(_) => Ok(false),
         }
-    }
-
-    // Fixed generate_image with proper parameters
-    pub async fn generate_image(
-        &self,
-        _prompt: String,
-        _negative_prompt: String,
-        _checkpoint: String,
-        _steps: u32,
-        _cfg: f32,
-        _seed: i64,
-    ) -> Result<Value, String> {
-        if !self.test_connection().await.unwrap_or(false) {
-            return Err("ComfyUI is not running".to_string());
-        }
-        // For now we return a placeholder. Full dynamic workflow will be restored.
-        Ok(json!({ "status": "generation queued (placeholder)" }))
     }
 
     pub async fn get_queue(&self) -> Result<Value, String> {
