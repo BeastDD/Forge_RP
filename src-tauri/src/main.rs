@@ -17,7 +17,15 @@ async fn get_comfy_status(manager: State<'_, Arc<ComfyManager>>) -> Result<Comfy
 #[tauri::command]
 async fn test_comfy_connection(manager: State<'_, Arc<ComfyManager>>) -> Result<bool, String> { manager.test_connection().await }
 #[tauri::command]
-async fn generate_image(manager: State<'_, Arc<ComfyManager>>, prompt: String, negative_prompt: String, checkpoint: String, steps: u32, cfg: f32, seed: i64) -> Result<Value, String> { manager.generate_image(prompt, negative_prompt, checkpoint, steps, cfg, seed).await }
+async fn generate_image(
+    manager: State<'_, Arc<ComfyManager>>,
+    prompt: String,
+    negative_prompt: String,
+    checkpoint: String,
+    steps: u32,
+    cfg: f32,
+    seed: i64
+) -> Result<Value, String> { manager.generate_image(prompt, negative_prompt, checkpoint, steps, cfg, seed).await }
 #[tauri::command]
 async fn get_comfy_queue(manager: State<'_, Arc<ComfyManager>>) -> Result<Value, String> { manager.get_queue().await }
 
@@ -36,6 +44,10 @@ async fn create_comfyui_venv(manager: State<'_, Arc<ComfyManager>>, target_dir: 
 #[tauri::command]
 async fn install_comfyui_requirements(manager: State<'_, Arc<ComfyManager>>) -> Result<String, String> { manager.install_requirements().await }
 
+// NEW: List checkpoints
+#[tauri::command]
+async fn list_checkpoints(manager: State<'_, Arc<ComfyManager>>) -> Result<Vec<String>, String> { manager.list_checkpoints().await }
+
 #[tokio::main]
 async fn main() {
     tauri::Builder::default()
@@ -43,23 +55,15 @@ async fn main() {
         .setup(|app| {
             let comfy_manager = Arc::new(ComfyManager::new());
             app.manage(comfy_manager);
-            // Do NOT create window here — it is defined in tauri.conf.json
-            // Creating it here causes double window in dev mode
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
-            start_comfyui,
-            stop_comfyui,
-            get_comfy_status,
-            test_comfy_connection,
-            generate_image,
-            get_comfy_queue,
-            get_comfyui_path,
-            set_comfyui_path,
-            get_python_path,
-            set_python_path,
-            create_comfyui_venv,
-            install_comfyui_requirements
+            start_comfyui, stop_comfyui, get_comfy_status, test_comfy_connection,
+            generate_image, get_comfy_queue,
+            get_comfyui_path, set_comfyui_path,
+            get_python_path, set_python_path,
+            create_comfyui_venv, install_comfyui_requirements,
+            list_checkpoints
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
