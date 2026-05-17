@@ -3,6 +3,7 @@
 
 use tauri::{Manager, State};
 use std::sync::Arc;
+use serde_json::Value;
 use crate::comfy_manager::{ComfyManager, ComfyStatus};
 
 mod comfy_manager;
@@ -25,6 +26,26 @@ async fn get_comfy_status(manager: State<'_, Arc<ComfyManager>>) -> Result<Comfy
 #[tauri::command]
 async fn test_comfy_connection(manager: State<'_, Arc<ComfyManager>>) -> Result<bool, String> {
     manager.test_connection().await
+}
+
+// Sprint 1: Core image generation command
+#[tauri::command]
+async fn generate_image(
+    manager: State<'_, Arc<ComfyManager>>,
+    prompt: String,
+    negative_prompt: String,
+    checkpoint: String,
+    steps: u32,
+    cfg: f32,
+    seed: i64,
+) -> Result<Value, String> {
+    manager.generate_image(prompt, negative_prompt, checkpoint, steps, cfg, seed).await
+}
+
+// Bonus for polling
+#[tauri::command]
+async fn get_comfy_queue(manager: State<'_, Arc<ComfyManager>>) -> Result<Value, String> {
+    manager.get_queue().await
 }
 
 #[tokio::main]
@@ -54,7 +75,9 @@ async fn main() {
             start_comfyui,
             stop_comfyui,
             get_comfy_status,
-            test_comfy_connection
+            test_comfy_connection,
+            generate_image,      // Sprint 1
+            get_comfy_queue      // Sprint 1
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
