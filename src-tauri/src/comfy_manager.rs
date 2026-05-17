@@ -1,14 +1,21 @@
-    // List checkpoints recursively (including subfolders)
-    pub async fn list_checkpoints(&self) -> Result<Vec<String>, String> {
-        let comfy_path = self.get_comfy_path().await;
-        let checkpoints_dir = comfy_path.join("models").join("checkpoints");
 
-        if !checkpoints_dir.exists() {
-            return Err(format!("Checkpoints folder not found at: {}", checkpoints_dir.display()));
+// Recursive helper to collect all model files
+fn collect_models_recursive(dir: &PathBuf, models: &mut Vec<String>) {
+    if let Ok(entries) = fs::read_dir(dir) {
+        for entry in entries.flatten() {
+            let path = entry.path();
+            if path.is_dir() {
+                collect_models_recursive(&path, models);
+            } else if path.is_file() {
+                if let Some(ext) = path.extension() {
+                    let ext_str = ext.to_string_lossy().to_lowercase();
+                    if ext_str == "safetensors" || ext_str == "ckpt" || ext_str == "pt" {
+                        if let Some(name) = path.file_name() {
+                            models.push(name.to_string_lossy().to_string());
+                        }
+                    }
+                }
+            }
         }
-
-        let mut models = Vec::new();
-        collect_models_recursive(&checkpoints_dir, &mut models);
-        models.sort();
-        Ok(models)
     }
+}
