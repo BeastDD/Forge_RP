@@ -20,12 +20,13 @@ function App() {
   const [showSettings, setShowSettings] = useState(false);
   const [comfyPath, setComfyPath] = useState('');
   const [pathLoading, setPathLoading] = useState(false);
+  const [pathError, setPathError] = useState('');
 
   // Poll status every 3 seconds
   useEffect(() => {
     const interval = setInterval(fetchStatus, 3000);
     fetchStatus();
-    loadComfyPath(); // load saved path on start
+    loadComfyPath();
     return () => clearInterval(interval);
   }, []);
 
@@ -36,7 +37,7 @@ function App() {
     } catch (e) {
       console.error('Status fetch failed', e);
     }
-    }
+  }
 
   async function loadComfyPath() {
     try {
@@ -102,30 +103,35 @@ function App() {
     }
   };
 
-  // === Settings: Folder Picker ===
+  // === Settings: Folder Picker with better error handling ===
   async function pickComfyUIPath() {
+    setPathError('');
+    setPathLoading(true);
+
     try {
       const selected = await open({
         directory: true,
         multiple: false,
-        title: 'Select your ComfyUI installation folder',
+        title: 'Select your ComfyUI installation folder (must contain main.py)',
       });
 
       if (selected && typeof selected === 'string') {
-        setPathLoading(true);
         try {
           const result = await invoke<string>('set_comfyui_path', { path: selected });
           setMessage(result);
           await loadComfyPath();
+          setPathError(''); // clear any previous error
         } catch (err: any) {
-          setMessage(`Failed to set path: ${err}`);
-        } finally {
-          setPathLoading(false);
+          const errorMsg = typeof err === 'string' ? err : err?.message || 'Unknown error setting path';
+          setPathError(errorMsg);
+          setMessage(`Failed to set ComfyUI path: ${errorMsg}`);
         }
       }
-    } catch (err) {
+    } catch (err: any) {
       console.error('Dialog error:', err);
-      setMessage('Failed to open folder picker');
+      setPathError('Failed to open folder picker. Make sure the app has permission.');
+    } finally {
+      setPathLoading(false);
     }
   }
 
@@ -148,7 +154,10 @@ function App() {
 
           <div className="flex items-center gap-4 text-sm">
             <button
-              onClick={() => setShowSettings(true)}
+              onClick={() => {
+                setShowSettings(true);
+                setPathError(''); // reset error when opening settings
+              }}
               className="flex items-center gap-2 px-4 py-2 rounded-xl border border-mandingo-gold/30 hover:bg-mandingo-gold/5 transition-all text-mandingo-muted hover:text-mandingo-text"
             >
               <Settings className="w-4 h-4" />
@@ -314,7 +323,7 @@ function App() {
                   </div>
                   <button 
                     onClick={() => setShowSettings(false)}
-                    className="text-mandingo-muted hover:text-white transition-colors"
+                    className="text-mandingo-muted hover:text-white transition-colors text-2xl leading-none"
                   >
                     ×
                   </button>
@@ -344,6 +353,13 @@ function App() {
                     <FolderOpen className="w-5 h-5" />
                     {pathLoading ? 'VALIDATING PATH...' : 'BROWSE FOR COMFYUI FOLDER'}
                   </button>
+
+                  {/* Error message inside modal */}
+                  {pathError && (
+                    <div className="mt-3 p-3 rounded-xl bg-red-950/40 border border-red-500/30 text-red-400 text-sm">
+                      {pathError}
+                    </div>
+                  )}
 
                   <p className="text-[10px] text-mandingo-muted mt-3 text-center">
                     Select the folder containing <span className="font-mono">main.py</span>
