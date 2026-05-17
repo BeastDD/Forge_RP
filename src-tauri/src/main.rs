@@ -43,22 +43,8 @@ async fn main() {
         .setup(|app| {
             let comfy_manager = Arc::new(ComfyManager::new());
             app.manage(comfy_manager);
-
-            // Only create window if it doesn't already exist (prevents double window)
-            if app.get_webview_window("mandingoforge-main").is_none() {
-                let _window = tauri::WebviewWindowBuilder::new(
-                    app,
-                    "mandingoforge-main",
-                    tauri::WebviewUrl::App("index.html".into()),
-                )
-                .title("MANDINGOFORGE v1.0")
-                .inner_size(1280.0, 800.0)
-                .min_inner_size(900.0, 600.0)
-                .center()
-                .build()
-                .expect("Failed to create main window");
-            }
-
+            // Do NOT create window here — it is defined in tauri.conf.json
+            // Creating it here causes double window in dev mode
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
