@@ -46,7 +46,6 @@ async fn get_comfy_queue(manager: State<'_, Arc<ComfyManager>>) -> Result<Value,
     manager.get_queue().await
 }
 
-// === NEW: ComfyUI Path Management (Sprint 1) ===
 #[tauri::command]
 async fn get_comfyui_path(manager: State<'_, Arc<ComfyManager>>) -> Result<String, String> {
     let path = manager.get_comfy_path().await;
@@ -61,6 +60,7 @@ async fn set_comfyui_path(manager: State<'_, Arc<ComfyManager>>, path: String) -
 #[tokio::main]
 async fn main() {
     tauri::Builder::default()
+        .plugin(tauri_plugin_dialog::init())
         .setup(|app| {
             let comfy_manager = Arc::new(ComfyManager::new());
             app.manage(comfy_manager.clone());
@@ -87,8 +87,8 @@ async fn main() {
             test_comfy_connection,
             generate_image,
             get_comfy_queue,
-            get_comfyui_path,   // NEW
-            set_comfyui_path    // NEW
+            get_comfyui_path,
+            set_comfyui_path
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
