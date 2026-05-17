@@ -3,7 +3,6 @@ use tokio::process::{Child, Command};
 use tokio::sync::Mutex;
 use std::process::Stdio;
 use std::path::PathBuf;
-use tauri::State;
 use serde::Serialize;
 
 #[derive(Debug, Serialize, Clone)]

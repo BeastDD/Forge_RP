@@ -6,8 +6,8 @@
   "build": {
     "beforeDevCommand": "npm run dev --prefix frontend",
     "beforeBuildCommand": "npm run build --prefix frontend",
-    "frontendDist": "frontend/dist",
-    "devUrl": "http://localhost:1420"
+    "frontendDist":"../frontend/dist",
+    "devUrl":"http://localhost:1420"
   },
   "app": {
     "windows": [
@@ -27,10 +27,6 @@
   "bundle": {
     "active": true,
     "targets": "all",
-    "icon": [
-      "icons/icon.png",
-      "icons/icon.icns",
-      "icons/icon.ico"
-    ]
+    "icon": []
   }
 }
