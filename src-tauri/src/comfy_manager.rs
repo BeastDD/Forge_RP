@@ -43,6 +43,7 @@ impl ComfyManager {
     }
 
     pub async fn get_comfy_path(&self) -> PathBuf { self.comfy_path.lock().await.clone() }
+
     pub async fn set_comfy_path(&self, new_path: String) -> Result<String, String> {
         let path = PathBuf::from(new_path.trim());
         if !path.join("main.py").exists() { return Err(format!("Invalid ComfyUI path: {}", path.display())); }
@@ -52,6 +53,7 @@ impl ComfyManager {
     }
 
     pub async fn get_python_path(&self) -> PathBuf { self.python_path.lock().await.clone() }
+
     pub async fn set_python_path(&self, new_path: String) -> Result<String, String> {
         let path = PathBuf::from(new_path.trim());
         if !path.exists() { return Err(format!("Python not found: {}", path.display())); }
@@ -60,7 +62,68 @@ impl ComfyManager {
         Ok(format!("Python set to: {}", path.display()))
     }
 
-    // List checkpoints by auto-detecting from ComfyUI path
+    // === Create Virtual Environment ===
+    pub async fn create_virtual_environment(&self, target_dir: String) -> Result<String, String> {
+        let target = PathBuf::from(target_dir.trim());
+        if target.exists() { return Err("Target folder already exists. Choose a different location.".to_string()); }
+
+        let sys_python = if cfg!(windows) { "python" } else { "python3" };
+
+        let output = Command::new(sys_python)
+            .arg("-m")
+            .arg("venv")
+            .arg(&target)
+            .output()
+            .await
+            .map_err(|e| format!("Failed to create virtual environment: {}", e))?;
+
+        if !output.status.success() {
+            return Err(format!("venv creation failed: {}", String::from_utf8_lossy(&output.stderr)));
+        }
+
+        let venv_python = if cfg!(windows) {
+            target.join("Scripts").join("python.exe")
+        } else {
+            target.join("bin").join("python")
+        };
+
+        *self.python_path.lock().await = venv_python.clone();
+        let _ = fs::write(".python_path", venv_python.to_string_lossy().as_ref());
+
+        Ok(format!("Virtual environment created successfully at {}\nSwitched Python to: {}", target.display(), venv_python.display()))
+    }
+
+    // === Install requirements.txt ===
+    pub async fn install_requirements(&self) -> Result<String, String> {
+        let comfy_path = self.get_comfy_path().await;
+        let python_path = self.get_python_path().await;
+
+        let req_file = comfy_path.join("requirements.txt");
+        if !req_file.exists() {
+            return Err("requirements.txt not found in the ComfyUI folder".to_string());
+        }
+
+        let py = if python_path.exists() { python_path.to_string_lossy().to_string() } else { "python".to_string() };
+
+        let output = Command::new(&py)
+            .arg("-m")
+            .arg("pip")
+            .arg("install")
+            .arg("-r")
+            .arg(&req_file)
+            .current_dir(&comfy_path)
+            .output()
+            .await
+            .map_err(|e| format!("Failed to run pip install: {}", e))?;
+
+        if output.status.success() {
+            Ok("Requirements installed successfully!".to_string())
+        } else {
+            Err(format!("pip install failed:\n{}", String::from_utf8_lossy(&output.stderr)))
+        }
+    }
+
+    // List checkpoints
     pub async fn list_checkpoints(&self) -> Result<Vec<String>, String> {
         let comfy_path = self.get_comfy_path().await;
         let checkpoints_dir = comfy_path.join("models").join("checkpoints");
@@ -75,7 +138,8 @@ impl ComfyManager {
                 let path = entry.path();
                 if path.is_file() {
                     if let Some(ext) = path.extension() {
-                        if ext == "safetensors" || ext == "ckpt" || ext == "pt" {
+                        let ext_str = ext.to_string_lossy().to_lowercase();
+                        if ext_str == "safetensors" || ext_str == "ckpt" || ext_str == "pt" {
                             if let Some(name) = path.file_name() {
                                 models.push(name.to_string_lossy().to_string());
                             }
@@ -104,62 +168,37 @@ impl ComfyManager {
         let port = self.port;
 
         let workflow = json!({
-            "1": {
-                "inputs": { "ckpt_name": checkpoint },
-                "class_type": "CheckpointLoaderSimple"
-            },
-            "2": {
-                "inputs": { "text": prompt, "clip": ["1", 1] },
-                "class_type": "CLIPTextEncode"
-            },
-            "3": {
-                "inputs": { "text": negative_prompt, "clip": ["1", 1] },
-                "class_type": "CLIPTextEncode"
-            },
-            "4": {
-                "inputs": { "width": 512, "height": 768, "batch_size": 1 },
-                "class_type": "EmptyLatentImage"
-            },
+            "1": { "inputs": { "ckpt_name": checkpoint }, "class_type": "CheckpointLoaderSimple" },
+            "2": { "inputs": { "text": prompt, "clip": ["1", 1] }, "class_type": "CLIPTextEncode" },
+            "3": { "inputs": { "text": negative_prompt, "clip": ["1", 1] }, "class_type": "CLIPTextEncode" },
+            "4": { "inputs": { "width": 512, "height": 768, "batch_size": 1 }, "class_type": "EmptyLatentImage" },
             "5": {
                 "inputs": {
-                    "seed": seed,
-                    "steps": steps,
-                    "cfg": cfg,
-                    "sampler_name": "euler",
-                    "scheduler": "normal",
-                    "denoise": 1.0,
-                    "model": ["1", 0],
-                    "positive": ["2", 0],
-                    "negative": ["3", 0],
-                    "latent_image": ["4", 0]
+                    "seed": seed, "steps": steps, "cfg": cfg,
+                    "sampler_name": "euler", "scheduler": "normal", "denoise": 1.0,
+                    "model": ["1", 0], "positive": ["2", 0], "negative": ["3", 0], "latent_image": ["4", 0]
                 },
                 "class_type": "KSampler"
             },
-            "6": {
-                "inputs": { "samples": ["5", 0], "vae": ["1", 2] },
-                "class_type": "VAEDecode"
-            },
-            "7": {
-                "inputs": { "filename_prefix": "mandingoforge", "images": ["6", 0] },
-                "class_type": "SaveImage"
-            }
+            "6": { "inputs": { "samples": ["5", 0], "vae": ["1", 2] }, "class_type": "VAEDecode" },
+            "7": { "inputs": { "filename_prefix": "mandingoforge", "images": ["6", 0] }, "class_type": "SaveImage" }
         });
 
         let client = reqwest::Client::new();
-        let payload = json!({ "prompt": workflow });
-        let url = format!("http://127.0.0.1:{}/prompt", port);
+        let res = client.post(format!("http://127.0.0.1:{}/prompt", port))
+            .json(&json!({ "prompt": workflow }))
+            .send()
+            .await
+            .map_err(|e| format!("Network error: {}", e))?;
 
-        let response = client.post(&url).json(&payload).send().await
-            .map_err(|e| format!("Failed to send to ComfyUI: {}", e))?;
-
-        if response.status().is_success() {
-            response.json::<Value>().await.map_err(|e| e.to_string())
+        if res.status().is_success() {
+            res.json::<Value>().await.map_err(|e| e.to_string())
         } else {
-            Err(format!("ComfyUI error: {}", response.status()))
+            Err(format!("ComfyUI returned error: {}", res.status()))
         }
     }
 
-    pub async fn start(&self) -> Result<String, String> { /* ... existing start code ... */ 
+    pub async fn start(&self) -> Result<String, String> {
         let mut child_guard = self.child.lock().await;
         if child_guard.is_some() { return Ok("ComfyUI already running".to_string()); }
 
@@ -181,15 +220,15 @@ impl ComfyManager {
 
         match cmd.spawn() {
             Ok(child) => { *child_guard = Some(child); Ok(format!("ComfyUI started using: {}", py)) }
-            Err(e) => Err(format!("Failed to start: {}", e)),
+            Err(e) => Err(format!("Failed to start ComfyUI: {}", e)),
         }
     }
 
-    pub async fn stop(&self) -> Result<String, String> { /* existing */ 
+    pub async fn stop(&self) -> Result<String, String> {
         let mut child_guard = self.child.lock().await;
         if let Some(mut child) = child_guard.take() {
             let _ = child.kill().await;
-            Ok("Stopped".to_string())
+            Ok("ComfyUI stopped".to_string())
         } else { Ok("Not running".to_string()) }
     }
 
