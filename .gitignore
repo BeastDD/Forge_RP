@@ -11,6 +11,20 @@ src-tauri/target/
 comfyui/
 !comfyui/.gitkeep
 
+# === Machine-specific persisted paths (CRITICAL: never commit these) ===
+src-tauri/.comfyui_path
+src-tauri/.python_path
+
+# === Large binary artifacts & archives (never commit) ===
+mandingoforge-sprint0.tar.gz
+*.tar.gz
+*.tar
+*.zip
+
+# === Local development symlinks ===
+ComfyUI - SymbolicLink
+ComfyUI-SymbolicLink
+
 # Models & large files
 models/
 !models/.gitkeep
